@@ -60,13 +60,23 @@ function renderOrder(){
     return;
   }
 
-  const products = [
+  const productsRaw = [
     ...state.menu.map(x=>({id:String(x.id),name:x.name,price:x.price,type:"menu",category:x.category||""})),
     ...state.extras.map(x=>({id:String(x.id),name:x.name,price:x.price,type:"extra",category:"Complemento"}))
   ];
+  const seenProductKeys = new Set();
+  const products = productsRaw.filter(p=>{
+    const key = `${p.type}:${p.id}`;
+    if(seenProductKeys.has(key)) return false;
+    seenProductKeys.add(key);
+    return true;
+  });
 
-  const selectedMenuId = state.selectedMenu ? String(state.selectedMenu.id) : "";
-  const selectedExtraIds = new Set(state.selectedExtras.map(String));
+  // Usamos una clave única por tipo + id para que el pintado nunca mezcle
+  // un bocadillo con un complemento, aunque sus ids coincidieran.
+  const selectedKeys = new Set();
+  if(state.selectedMenu) selectedKeys.add(`menu:${String(state.selectedMenu.id)}`);
+  state.selectedExtras.forEach(id=>selectedKeys.add(`extra:${String(id)}`));
 
   c.innerHTML=`
     <div class="card hero">
@@ -81,10 +91,9 @@ function renderOrder(){
       <p class="small muted">Elige 1 bocadillo y los complementos que quieras.</p>
       <div class="grid">
         ${products.map(p=>{
-          const selected = p.type==="menu"
-            ? selectedMenuId===p.id
-            : selectedExtraIds.has(p.id);
-          return `<button type="button" class="product ${selected?"selected":""}" data-product-id="${p.id}" data-product-type="${p.type}">
+          const key = `${p.type}:${p.id}`;
+          const selected = selectedKeys.has(key);
+          return `<button type="button" class="product ${selected?"selected":""}" aria-pressed="${selected}" data-product-key="${key}" data-product-id="${p.id}" data-product-type="${p.type}">
             <div><div class="product-name">${p.name}</div><div class="small muted">${p.category}</div></div>
             <div class="price">${money(p.price)}</div>
           </button>`;
