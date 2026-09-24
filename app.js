@@ -80,13 +80,24 @@ function renderOrder(){
     state.selectedMenu=state.menu.find(x=>String(x.id)===String(el.dataset.menu));
     renderOrder();
   }));
-  c.querySelectorAll("[data-extra]").forEach(el=>bindTap(el,()=>{
-    const id=el.dataset.extra;
-    state.selectedExtras=state.selectedExtras.includes(id)
-      ? state.selectedExtras.filter(x=>x!==id)
-      : [...state.selectedExtras,id];
-    renderOrder();
-  }));
+  c.querySelectorAll("[data-extra]").forEach(el=>{
+    el.addEventListener("pointerup", e=>{
+      if(e.pointerType==="touch") e.preventDefault();
+      const id=String(el.dataset.extra);
+      state.selectedExtras=state.selectedExtras.map(String).includes(id)
+        ? state.selectedExtras.filter(x=>String(x)!==id)
+        : [...state.selectedExtras,id];
+      renderOrder();
+    }, {passive:false});
+    el.addEventListener("click", ()=>{
+      if(window.matchMedia("(pointer: coarse)").matches) return;
+      const id=String(el.dataset.extra);
+      state.selectedExtras=state.selectedExtras.map(String).includes(id)
+        ? state.selectedExtras.filter(x=>String(x)!==id)
+        : [...state.selectedExtras,id];
+      renderOrder();
+    });
+  });
   $("#confirm").onclick=confirmOrder;
 }
 function totalSelected(){return (state.selectedMenu?.price||0)+state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>x.id===id)?.price||0),0)}
