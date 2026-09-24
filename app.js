@@ -265,24 +265,44 @@ async function adminSection(section){
         const key=btn.dataset.exportOrder;
         const group=groups.find(g=>g.key===key);
         if(!group)return;
+
         const extraNames=new Map((extras||[]).map(x=>[String(x.id),x.name]));
         const counts={};
+        const personTotals={};
+
         const lines=(group.rows||[]).map(o=>{
+          const person=o.profiles?.name||"—";
           const extrasList=(o.extra_ids||[]).map(id=>extraNames.get(String(id))).filter(Boolean);
           const detail=[o.menu_items?.name||"—",...extrasList].join(" + ");
+          const total=Number(o.total||0);
+
           counts[o.menu_items?.name||"—"]=(counts[o.menu_items?.name||"—"]||0)+1;
           extrasList.forEach(n=>counts[n]=(counts[n]||0)+1);
-          return `• ${o.profiles?.name||"—"}: ${detail}`;
+          personTotals[person]=(personTotals[person]||0)+total;
+
+          return `• ${person}: ${detail} → ${money(total)}`;
         });
+
         const summaryLines=Object.entries(counts).map(([name,n])=>`• ${n}x ${name}`);
-        const personTotals={};
-        (group.rows||[]).forEach(o=>{
-          const name=o.profiles?.name||"—";
-          personTotals[name]=(personTotals[name]||0)+Number(o.total||0);
-        });
         const personTotalLines=Object.entries(personTotals).map(([name,total])=>`• ${name}: ${money(total)}`);
         const groupTotal=(group.rows||[]).reduce((s,o)=>s+Number(o.total||0),0);
-        const text=`🥖 LOBO CHICO X BIKEOCASION — ${group.window?.name||"Pedido"}\n\n${lines.map((line,i)=>line+` → ${money(group.rows[i]?.total||0)}`).join("\n")}\n\n💰 GASTO POR PERSONA\n${personTotalLines.join("\n")}\n\n📊 RESUMEN\n${summaryLines.join("\n")}\n\n💰 TOTAL: ${money(groupTotal)}\n\n👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`;
+
+        const text=[
+          `🥖 LOBO CHICO X BIKEOCASION — ${group.window?.name||"Pedido"}`,
+          "",
+          ...lines,
+          "",
+          "💰 GASTO POR PERSONA",
+          ...personTotalLines,
+          "",
+          "📊 RESUMEN",
+          ...summaryLines,
+          "",
+          `💰 TOTAL: ${money(groupTotal)}`,
+          "",
+          `👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`
+        ].join("\n");
+
         try{
           await navigator.clipboard.writeText(text);
           const old=btn.textContent;
