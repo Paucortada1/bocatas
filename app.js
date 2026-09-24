@@ -57,15 +57,14 @@ function renderOrder(){
   const c=$("#content");
   if(!state.openOrder){c.innerHTML=`<div class="card hero"><h1>No hay pedido abierto</h1><p class="muted">Cuando se abra el próximo desayuno aparecerá aquí.</p></div>`;return}
   c.innerHTML=`<div class="card hero"><h1>Pedido abierto</h1><p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p></div>
-  <div class="card"><div class="row"><h2 style="margin:0">🥖 Bocadillo</h2><button class="secondary" id="clearOrder" type="button">Limpiar</button></div><div class="grid">${state.menu.map(x=>`<div class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu="${x.id}" role="button" tabindex="0"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></div>`).join("")}</div></div>
-  <div class="card"><h2>➕ Complementos</h2><div class="grid">${state.extras.map(x=>`<div class="product ${state.selectedExtras.includes(String(x.id))?"selected":""}" data-extra="${x.id}" role="button" tabindex="0"><div class="product-name">${x.name}</div><div class="price">${money(x.price)}</div></div>`).join("")}</div></div>
-  <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm" type="button">Confirmar pedido</button></div></div>`;
-  c.querySelectorAll("[data-menu]").forEach(el=>{const fn=()=>{const id=String(el.dataset.menu);state.selectedMenu=state.selectedMenu?.id===id?null:(state.menu.find(x=>String(x.id)===id)||null);renderOrder()};el.onclick=fn;el.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn()}}});
-  c.querySelectorAll("[data-extra]").forEach(el=>{const fn=()=>{const id=String(el.dataset.extra);const current=state.selectedExtras.map(String);state.selectedExtras=current.includes(id)?current.filter(x=>x!==id):[...current,id];renderOrder()};el.onclick=fn;el.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn()}}});
-  $("#clearOrder").onclick=()=>{state.selectedMenu=null;state.selectedExtras=[];renderOrder()};
+  <div class="card"><h2>🥖 Bocadillo</h2><div class="grid">${state.menu.map(x=>`<button type="button" class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu="${x.id}"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
+  <div class="card"><h2>➕ Complementos</h2><div class="grid">${state.extras.map(x=>`<button type="button" class="product ${state.selectedExtras.includes(x.id)?"selected":""}" data-extra="${x.id}"><div class="product-name">${x.name}</div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
+  <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm">Confirmar pedido</button></div></div>`;
+  c.querySelectorAll("[data-menu]").forEach(el=>el.onclick=()=>{state.selectedMenu=state.menu.find(x=>x.id===el.dataset.menu);renderOrder()});
+  c.querySelectorAll("[data-extra]").forEach(el=>el.onclick=()=>{const id=el.dataset.extra;state.selectedExtras=state.selectedExtras.includes(id)?state.selectedExtras.filter(x=>x!==id):[...state.selectedExtras,id];renderOrder()});
   $("#confirm").onclick=confirmOrder;
 }
-function totalSelected(){return (state.selectedMenu?.price||0)+state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>String(x.id)===String(id))?.price||0),0)}
+function totalSelected(){return (state.selectedMenu?.price||0)+state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>x.id===id)?.price||0),0)}
 async function confirmOrder(){
   if(!state.selectedMenu)return alert("Elige un bocadillo.");
   const {error}=await db.from("orders").insert({user_id:state.session.user.id,order_window_id:state.openOrder.id,menu_item_id:state.selectedMenu.id,extra_ids:state.selectedExtras,total:totalSelected()});
@@ -96,8 +95,73 @@ function renderAdmin(){
 async function adminSection(section){
   const c=$("#adminContent");
   if(section==="orders"){
-    const {data}=await db.from("orders").select("*,profiles(name),menu_items(name)").order("created_at",{ascending:false});
-    c.innerHTML=`<h2>Pedidos</h2><div class="list">${(data||[]).map(o=>`<div class="list-item row"><div><b>${o.profiles?.name||"—"}</b><br>${o.menu_items?.name||"—"}<br><span class="small muted">${new Date(o.created_at).toLocaleString("es-ES")}</span></div><b>${money(o.total)}</b></div>`).join("")||"<p class='muted'>No hay pedidos.</p>"}</div>`;
+    const {data:windows}=await db.from("order_windows").select("*").order("created_at",{ascending:false}).limit(1);
+    const latestWindow=windows?.[0];
+    const {data}=latestWindow
+      ? await db.from("orders").select("*,profiles(name),menu_items(name)").eq("order_window_id",latestWindow.id).order("created_at",{ascending:true})
+      : {data:[]};
+
+    const orders=data||[];
+    const sandwichCounts={};
+    const extraCounts={};
+
+    orders.forEach(o=>{
+      const sandwich=o.menu_items?.name||"—";
+      sandwichCounts[sandwich]=(sandwichCounts[sandwich]||0)+1;
+      (o.extra_ids||[]).forEach(id=>{
+        const extra=state.extras.find(x=>String(x.id)===String(id));
+        if(extra) extraCounts[extra.name]=(extraCounts[extra.name]||0)+1;
+      });
+    });
+
+    const summaryText=[
+      "PEDIDO DEL BAR",
+      "",
+      "BOCADILLOS:",
+      ...Object.entries(sandwichCounts).map(([name,n])=>`${n}x ${name}`),
+      ...(Object.keys(extraCounts).length?["","COMPLEMENTOS:",...Object.entries(extraCounts).map(([name,n])=>`${n}x ${name}`)]:[]),
+      "",
+      `TOTAL: ${orders.length} pedido${orders.length===1?"":"s"}`
+    ].join("\n");
+
+    c.innerHTML=`
+      <h2>Pedidos</h2>
+      <div class="card" style="margin:12px 0">
+        <div class="row">
+          <div>
+            <h2 style="margin:0">📋 Resumen para el bar</h2>
+            <p class="muted small">Resumen agrupado del último pedido.</p>
+          </div>
+          <button class="primary" id="copyBar">Copiar</button>
+        </div>
+        <pre id="barSummary" style="white-space:pre-wrap;margin:12px 0 0">${summaryText}</pre>
+      </div>
+      <h3>Pedidos individuales</h3>
+      <div class="list">
+        ${orders.map(o=>`
+          <div class="list-item row">
+            <div>
+              <b>${o.profiles?.name||"—"}</b><br>
+              ${o.menu_items?.name||"—"}
+              ${(o.extra_ids||[]).map(id=>{
+                const extra=state.extras.find(x=>String(x.id)===String(id));
+                return extra?`<br><span class="small muted">+ ${extra.name}</span>`:"";
+              }).join("")}
+            </div>
+            <b>${money(o.total)}</b>
+          </div>
+        `).join("")||"<p class='muted'>No hay pedidos.</p>"}
+      </div>`;
+
+    $("#copyBar").onclick=async()=>{
+      try{
+        await navigator.clipboard.writeText(summaryText);
+        $("#copyBar").textContent="Copiado ✓";
+        setTimeout(()=>$("#copyBar").textContent="Copiar",1500);
+      }catch(e){
+        alert("No se ha podido copiar. Selecciona el resumen y cópialo manualmente.");
+      }
+    };
   }
   if(section==="windows"){
     c.innerHTML=`<h2>Abrir pedido</h2><div class="field"><label>Hora de cierre</label><input id="closeTime" type="datetime-local"></div><button class="primary" id="openBtn">Abrir pedido</button>`;
