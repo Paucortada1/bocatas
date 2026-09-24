@@ -280,10 +280,16 @@ async function adminSection(section){
         try{
           await navigator.clipboard.writeText(text);
           const old=btn.textContent;
-          btn.textContent="✅ Copiado";
+          btn.textContent="✅ Copiado y cerrado";
+          await db.from("order_windows").update({open:false}).eq("id",group.window?.id);
           setTimeout(()=>btn.textContent=old,1500);
+          await adminSection("orders");
         }catch(e){
           window.prompt("Copia este pedido para WhatsApp:",text);
+          if(group.window?.id){
+            await db.from("order_windows").update({open:false}).eq("id",group.window.id);
+          }
+          await adminSection("orders");
         }
       };
     });
