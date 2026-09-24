@@ -10,26 +10,12 @@ async function init(){
   if(SUPABASE_URL.startsWith("PEGA_")) return renderSetup();
   const {data:{session}} = await db.auth.getSession();
   state.session=session;
-  db.auth.onAuthStateChange((_e,s)=>{
-    const previousUserId=state.session?.user?.id || null;
-    const nextUserId=s?.user?.id || null;
-    state.session=s;
-    if(previousUserId!==nextUserId){
-      state.selectedMenu=null;
-      state.selectedExtras=[];
-    }
-    if(!s) renderAuth(); else load();
-  });
+  db.auth.onAuthStateChange((_e,s)=>{state.session=s; if(!s) renderAuth(); else load();});
   if(!session) return renderAuth();
   await load();
   if("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
 }
 async function load(){
-  if(!state.session){
-    state.selectedMenu=null;
-    state.selectedExtras=[];
-    return renderAuth();
-  }
   const {data:profile} = await db.from("profiles").select("*").eq("id",state.session.user.id).single();
   state.profile=profile;
   const [{data:menu},{data:extras},{data:open}] = await Promise.all([
@@ -59,11 +45,7 @@ function render(){
     <nav class="nav">${nav("order","🥪 Pedir")}${nav("menu","📋 Carta")}${nav("stats","📊 Estadísticas")}${admin?nav("admin","⚙️ Admin"):""}</nav>
     <main id="content"></main>
   </div>`;
-  $("#logout").onclick=async()=>{
-    state.selectedMenu=null;
-    state.selectedExtras=[];
-    await db.auth.signOut();
-  };
+  $("#logout").onclick=()=>db.auth.signOut();
   if(state.page==="order") renderOrder();
   if(state.page==="menu") renderMenu();
   if(state.page==="stats") renderStats();
@@ -98,7 +80,7 @@ function renderOrder(){
 
   c.innerHTML=`
     <div class="card hero">
-      <h1>Pedido abierto</h1>
+      <h1>${state.openOrder.name||"Pedido abierto"}</h1>
       <p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p>
     </div>
     <div class="card">
@@ -191,12 +173,52 @@ function renderAdmin(){
 async function adminSection(section){
   const c=$("#adminContent");
   if(section==="orders"){
-    const {data}=await db.from("orders").select("*,profiles(name),menu_items(name)").order("created_at",{ascending:false});
-    c.innerHTML=`<h2>Pedidos</h2><div class="list">${(data||[]).map(o=>`<div class="list-item row"><div><b>${o.profiles?.name||"—"}</b><br>${o.menu_items?.name||"—"}<br><span class="small muted">${new Date(o.created_at).toLocaleString("es-ES")}</span></div><b>${money(o.total)}</b></div>`).join("")||"<p class='muted'>No hay pedidos.</p>"}</div>`;
+    const [{data:orders,error:ordersError},{data:windows,error:windowsError},{data:extras,error:extrasError}]=await Promise.all([
+      db.from("orders").select("*,profiles(name),menu_items(name)").order("created_at",{ascending:false}),
+      db.from("order_windows").select("*").order("created_at",{ascending:false}),
+      db.from("extras").select("*")
+    ]);
+    if(ordersError||windowsError||extrasError){
+      c.innerHTML=`<p class="error">No se han podido cargar los pedidos.</p>`;
+      return;
+    }
+    const extraMap=new Map((extras||[]).map(x=>[String(x.id),x]));
+    const windowMap=new Map((windows||[]).map(w=>[String(w.id),w]));
+    const grouped=new Map();
+    (orders||[]).forEach(o=>{
+      const key=String(o.order_window_id||"sin-ventana");
+      if(!grouped.has(key)) grouped.set(key,[]);
+      grouped.get(key).push(o);
+    });
+    const groups=[...grouped.entries()].map(([key,rows])=>({window:windowMap.get(key)||null,rows}));
+    c.innerHTML=`<h2>Pedidos</h2>
+      ${groups.map(g=>{
+        const w=g.window;
+        const title=w?.name||"Pedido sin nombre";
+        const total=g.rows.reduce((s,o)=>s+Number(o.total||0),0);
+        const rows=g.rows.map(o=>{
+          const extrasNames=(o.extra_ids||[]).map(id=>extraMap.get(String(id))?.name).filter(Boolean);
+          const detail=[o.menu_items?.name||"—",...extrasNames].join(" + ");
+          return `<div class="list-item row"><div><b>${o.profiles?.name||"—"}</b><br><span>${detail}</span><br><span class="small muted">${new Date(o.created_at).toLocaleString("es-ES")}</span></div><b>${money(o.total)}</b></div>`;
+        }).join("");
+        return `<div class="card" style="margin-top:12px"><div class="row"><div><h3 style="margin:0">${title}</h3><span class="small muted">${w?.closes_at?`Cierra: ${new Date(w.closes_at).toLocaleString("es-ES")}`:""}</span></div><b>${money(total)}</b></div><div class="list" style="margin-top:10px">${rows}</div></div>`;
+      }).join("")||"<p class='muted'>No hay pedidos.</p>"}`;
   }
   if(section==="windows"){
-    c.innerHTML=`<h2>Abrir pedido</h2><div class="field"><label>Hora de cierre</label><input id="closeTime" type="datetime-local"></div><button class="primary" id="openBtn">Abrir pedido</button>`;
-    $("#openBtn").onclick=async()=>{const v=$("#closeTime").value;if(!v)return;await db.from("order_windows").update({open:false}).eq("open",true);const {error}=await db.from("order_windows").insert({open:true,closes_at:new Date(v).toISOString(),opened_by:state.session.user.id});if(error)alert(error.message);else{alert("Pedido abierto");await load();renderAdmin()}};
+    c.innerHTML=`<h2>Abrir pedido</h2>
+      <div class="field"><label>Nombre del pedido</label><input id="orderName" placeholder="Ej. Desayuno viernes"></div>
+      <div class="field"><label>Hora de cierre</label><input id="closeTime" type="datetime-local"></div>
+      <button class="primary" id="openBtn">Abrir pedido</button>`;
+    $("#openBtn").onclick=async()=>{
+      const name=$("#orderName").value.trim();
+      const v=$("#closeTime").value;
+      if(!name)return alert("Pon un nombre al pedido.");
+      if(!v)return alert("Elige la hora de cierre.");
+      await db.from("order_windows").update({open:false}).eq("open",true);
+      const {error}=await db.from("order_windows").insert({name,open:true,closes_at:new Date(v).toISOString(),opened_by:state.session.user.id});
+      if(error)alert(error.message);
+      else{alert("Pedido abierto");await load();renderAdmin()}
+    };
   }
   if(section==="menu"){
     const {data:items}=await db.from("menu_items").select("*").order("name");
