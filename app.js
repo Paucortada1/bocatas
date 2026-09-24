@@ -275,7 +275,14 @@ async function adminSection(section){
           return `• ${o.profiles?.name||"—"}: ${detail}`;
         });
         const summaryLines=Object.entries(counts).map(([name,n])=>`• ${n}x ${name}`);
-        const text=`🥖 PEDIDO BAR — ${group.window?.name||"Pedido"}\n\n${lines.join("\n")}\n\n📊 RESUMEN\n${summaryLines.join("\n")}\n\n👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`;
+        const personTotals={};
+        (group.rows||[]).forEach(o=>{
+          const name=o.profiles?.name||"—";
+          personTotals[name]=(personTotals[name]||0)+Number(o.total||0);
+        });
+        const personTotalLines=Object.entries(personTotals).map(([name,total])=>`• ${name}: ${money(total)}`);
+        const groupTotal=(group.rows||[]).reduce((s,o)=>s+Number(o.total||0),0);
+        const text=`🥖 LOBO CHICO X BIKEOCASION — ${group.window?.name||"Pedido"}\n\n${lines.map((line,i)=>line+` → ${money(group.rows[i]?.total||0)}`).join("\n")}\n\n💰 GASTO POR PERSONA\n${personTotalLines.join("\n")}\n\n📊 RESUMEN\n${summaryLines.join("\n")}\n\n💰 TOTAL: ${money(groupTotal)}\n\n👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`;
         try{
           await navigator.clipboard.writeText(text);
           const old=btn.textContent;
