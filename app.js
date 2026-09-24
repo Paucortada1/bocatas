@@ -80,22 +80,28 @@ function renderOrder(){
     state.selectedMenu=state.menu.find(x=>String(x.id)===String(el.dataset.menu));
     renderOrder();
   }));
+  // Complementos: usar touchend/click directamente para máxima compatibilidad con iPhone.
   c.querySelectorAll("[data-extra]").forEach(el=>{
-    el.addEventListener("pointerup", e=>{
-      if(e.pointerType==="touch") e.preventDefault();
-      const id=String(el.dataset.extra);
-      state.selectedExtras=state.selectedExtras.map(String).includes(id)
-        ? state.selectedExtras.filter(x=>String(x)!==id)
-        : [...state.selectedExtras,id];
+    let touched = false;
+    const toggleExtra = ()=>{
+      const id = String(el.dataset.extra);
+      const current = state.selectedExtras.map(String);
+      if(current.includes(id)){
+        state.selectedExtras = state.selectedExtras.filter(x=>String(x)!==id);
+      }else{
+        state.selectedExtras = [...state.selectedExtras, el.dataset.extra];
+      }
       renderOrder();
+    };
+    el.addEventListener("touchend", e=>{
+      e.preventDefault();
+      touched = true;
+      toggleExtra();
+      setTimeout(()=>touched=false,500);
     }, {passive:false});
     el.addEventListener("click", ()=>{
-      if(window.matchMedia("(pointer: coarse)").matches) return;
-      const id=String(el.dataset.extra);
-      state.selectedExtras=state.selectedExtras.map(String).includes(id)
-        ? state.selectedExtras.filter(x=>String(x)!==id)
-        : [...state.selectedExtras,id];
-      renderOrder();
+      if(touched) return;
+      toggleExtra();
     });
   });
   $("#confirm").onclick=confirmOrder;
