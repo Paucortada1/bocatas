@@ -57,21 +57,12 @@ function renderOrder(){
   const c=$("#content");
   if(!state.openOrder){c.innerHTML=`<div class="card hero"><h1>No hay pedido abierto</h1><p class="muted">Cuando se abra el próximo desayuno aparecerá aquí.</p></div>`;return}
   c.innerHTML=`<div class="card hero"><h1>Pedido abierto</h1><p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p></div>
-  <div class="card"><h2>🥖 Bocadillo</h2><div class="grid">${state.menu.map(x=>`<button type="button" class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu="${x.id}"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
+  <div class="card"><div class="row"><h2 style="margin:0">🥖 Bocadillo</h2><button class="secondary" id="clearOrder" type="button">Limpiar</button></div><div class="grid">${state.menu.map(x=>`<button type="button" class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu="${x.id}"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
   <div class="card"><h2>➕ Complementos</h2><div class="grid">${state.extras.map(x=>`<button type="button" class="product ${state.selectedExtras.includes(x.id)?"selected":""}" data-extra="${x.id}"><div class="product-name">${x.name}</div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
-  <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button type="button" class="primary" id="confirm">Confirmar pedido</button></div></div>`;
-  c.querySelectorAll("[data-menu]").forEach(el=>el.addEventListener("click",()=>{
-    const id=el.getAttribute("data-menu");
-    state.selectedMenu=state.menu.find(x=>String(x.id)===String(id)) || null;
-    renderOrder();
-  }));
-  c.querySelectorAll("[data-extra]").forEach(el=>el.addEventListener("click",()=>{
-    const id=el.getAttribute("data-extra");
-    state.selectedExtras=state.selectedExtras.some(x=>String(x)===String(id))
-      ? state.selectedExtras.filter(x=>String(x)!==String(id))
-      : [...state.selectedExtras,id];
-    renderOrder();
-  }));
+  <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm" type="button">Confirmar pedido</button></div></div>`;
+  c.querySelectorAll("[data-menu]").forEach(el=>el.onclick=()=>{state.selectedMenu=state.menu.find(x=>String(x.id)===String(el.dataset.menu))||null;renderOrder()});
+  c.querySelectorAll("[data-extra]").forEach(el=>el.onclick=()=>{const id=el.dataset.extra;state.selectedExtras=state.selectedExtras.includes(id)?state.selectedExtras.filter(x=>x!==id):[...state.selectedExtras,id];renderOrder()});
+  $("#clearOrder").onclick=()=>{state.selectedMenu=null;state.selectedExtras=[];renderOrder()};
   $("#confirm").onclick=confirmOrder;
 }
 function totalSelected(){return (state.selectedMenu?.price||0)+state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>x.id===id)?.price||0),0)}
