@@ -55,65 +55,88 @@ function nav(id,label){return `<button class="${state.page===id?"active":""}" da
 document.addEventListener("click",e=>{const b=e.target.closest("[data-page]");if(b){state.page=b.dataset.page;render()}});
 function renderOrder(){
   const c=$("#content");
-  if(!state.openOrder){c.innerHTML=`<div class="card hero"><h1>No hay pedido abierto</h1><p class="muted">Cuando se abra el próximo desayuno aparecerá aquí.</p></div>`;return}
-  c.innerHTML=`<div class="card hero"><h1>Pedido abierto</h1><p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p></div>
-  <div class="card"><h2>🥖 Bocadillo</h2><div class="grid">${state.menu.map(x=>`<button type="button" class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu="${x.id}"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
-  <div class="card"><h2>➕ Complementos</h2><div class="grid">${state.extras.map(x=>`<button type="button" class="product ${state.selectedExtras.includes(x.id)?"selected":""}" data-extra="${x.id}"><div class="product-name">${x.name}</div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
-  <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm">Confirmar pedido</button></div></div>`;
-  // Selección robusta en móvil/iPhone: usamos pointerup + click como respaldo.
-  const bindTap = (el, handler) => {
-    let handled = false;
-    el.addEventListener("pointerup", e => {
-      if (e.pointerType === "touch") {
-        e.preventDefault();
-        handled = true;
-        handler();
-        setTimeout(() => handled = false, 350);
-      }
-    }, {passive:false});
-    el.addEventListener("click", e => {
-      if (handled) return;
-      handler();
-    });
-  };
-  c.querySelectorAll("[data-menu]").forEach(el=>bindTap(el,()=>{
-    state.selectedMenu=state.menu.find(x=>String(x.id)===String(el.dataset.menu));
+  if(!state.openOrder){
+    c.innerHTML=`<div class="card hero"><h1>No hay pedido abierto</h1><p class="muted">Cuando se abra el próximo desayuno aparecerá aquí.</p></div>`;
+    return;
+  }
+
+  const products = [
+    ...state.menu.map(x=>({...x, productType:"menu"})),
+    ...state.extras.map(x=>({...x, productType:"extra"}))
+  ];
+
+  const selectedIds = [
+    ...(state.selectedMenu ? [String(state.selectedMenu.id)] : []),
+    ...state.selectedExtras.map(String)
+  ];
+
+  c.innerHTML=`<div class="card hero">
+    <h1>Pedido abierto</h1>
+    <p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p>
+  </div>
+  <div class="card">
+    <div class="row">
+      <h2 style="margin:0">🥪 Tu pedido</h2>
+      <button type="button" class="secondary" id="clearOrder">Limpiar</button>
+    </div>
+    <p class="small muted">Selecciona un bocadillo y los complementos que quieras.</p>
+    <div class="grid">${products.map(x=>`
+      <button type="button" class="product ${selectedIds.includes(String(x.id))?"selected":""}" data-product="${x.id}" data-type="${x.productType}">
+        <div>
+          <div class="product-name">${x.name}</div>
+          <div class="small muted">${x.productType==="menu"?(x.category||"Bocadillo"):"Complemento"}</div>
+        </div>
+        <div class="price">${money(x.price)}</div>
+      </button>`).join("")}</div>
+  </div>
+  <div class="card">
+    <div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm">Confirmar pedido</button></div>
+  </div>`;
+
+  let lastTap = 0;
+  const selectProduct = el=>{
+    const now=Date.now();
+    if(now-lastTap<250) return;
+    lastTap=now;
+
+    const id=String(el.dataset.product);
+    const type=el.dataset.type;
+
+    if(type==="menu"){
+      // Solo un bocadillo: seleccionar otro sustituye el anterior.
+      state.selectedMenu=state.menu.find(x=>String(x.id)===id)||null;
+    }else{
+      // Complementos: multiselección.
+      const current=state.selectedExtras.map(String);
+      state.selectedExtras=current.includes(id)
+        ? state.selectedExtras.filter(x=>String(x)!==id)
+        : [...state.selectedExtras, el.dataset.product];
+    }
     renderOrder();
-  }));
-  // Complementos: usar touchend/click directamente para máxima compatibilidad con iPhone.
-  c.querySelectorAll("[data-extra]").forEach(el=>{
-    let touched = false;
-    const toggleExtra = ()=>{
-      const id = String(el.dataset.extra);
-      const current = state.selectedExtras.map(String);
-      if(current.includes(id)){
-        state.selectedExtras = state.selectedExtras.filter(x=>String(x)!==id);
-      }else{
-        state.selectedExtras = [...state.selectedExtras, el.dataset.extra];
-      }
-      renderOrder();
-    };
-    el.addEventListener("touchend", e=>{
-      e.preventDefault();
-      touched = true;
-      toggleExtra();
-      setTimeout(()=>touched=false,500);
-    }, {passive:false});
-    el.addEventListener("click", ()=>{
-      if(touched) return;
-      toggleExtra();
+  };
+
+  c.querySelectorAll("[data-product]").forEach(el=>{
+    el.addEventListener("pointerup",e=>{
+      if(e.pointerType==="touch") e.preventDefault();
+      selectProduct(el);
+    },{passive:false});
+    el.addEventListener("click",()=>{
+      if(Date.now()-lastTap<500) return;
+      selectProduct(el);
     });
   });
+
+  $("#clearOrder").onclick=()=>{
+    state.selectedMenu=null;
+    state.selectedExtras=[];
+    renderOrder();
+  };
   $("#confirm").onclick=confirmOrder;
 }
-function totalSelected(){return (state.selectedMenu?.price||0)+state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>x.id===id)?.price||0),0)}
-async function confirmOrder(){
-  if(!state.selectedMenu)return alert("Elige un bocadillo.");
-  const {error}=await db.from("orders").insert({user_id:state.session.user.id,order_window_id:state.openOrder.id,menu_item_id:state.selectedMenu.id,extra_ids:state.selectedExtras,total:totalSelected()});
-  if(error)return alert(error.message);
-  state.selectedMenu=null;state.selectedExtras=[];
-  alert("¡Pedido enviado!");
-  await load();
+
+function totalSelected(){
+  return (state.selectedMenu?.price||0)
+    + state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>String(x.id)===String(id))?.price||0),0);
 }
 function renderMenu(){
   $("#content").innerHTML=`<div class="card"><h1>📋 Carta</h1><h2>Bocadillos</h2><div class="list">${state.menu.map(x=>`<div class="list-item row"><span>${x.name}</span><b>${money(x.price)}</b></div>`).join("")}</div><h2>Complementos</h2><div class="list">${state.extras.map(x=>`<div class="list-item row"><span>${x.name}</span><b>${money(x.price)}</b></div>`).join("")}</div></div>`;
