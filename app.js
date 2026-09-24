@@ -53,7 +53,7 @@ function render(){
 }
 function nav(id,label){return `<button class="${state.page===id?"active":""}" data-page="${id}">${label}</button>`}
 document.addEventListener("click",e=>{const b=e.target.closest("[data-page]");if(b){state.page=b.dataset.page;render()}});
-function renderOrder(){
+async function renderOrder(){
   const c=$("#content");
   if(!state.openOrder){
     c.innerHTML=`<div class="card hero"><h1>No hay pedido abierto</h1><p class="muted">Cuando se abra el próximo desayuno aparecerá aquí.</p></div>`;
@@ -72,11 +72,29 @@ function renderOrder(){
     return true;
   });
 
-  // Usamos una clave única por tipo + id para que el pintado nunca mezcle
-  // un bocadillo con un complemento, aunque sus ids coincidieran.
   const selectedKeys = new Set();
   if(state.selectedMenu) selectedKeys.add(`menu:${String(state.selectedMenu.id)}`);
   state.selectedExtras.forEach(id=>selectedKeys.add(`extra:${String(id)}`));
+
+  const {data:currentOrders=[]} = await db.from("orders")
+    .select("*,profiles(name),menu_items(name)")
+    .eq("order_window_id",state.openOrder.id)
+    .order("created_at",{ascending:true});
+
+  const extraMap=new Map(state.extras.map(x=>[String(x.id),x]));
+  const people=(currentOrders||[]).map(o=>({
+    name:o.profiles?.name||"—",
+    detail:[o.menu_items?.name||"—",...(o.extra_ids||[]).map(id=>extraMap.get(String(id))?.name).filter(Boolean)].join(" + ")
+  }));
+  const summary={};
+  (currentOrders||[]).forEach(o=>{
+    const menuName=o.menu_items?.name||"—";
+    summary[menuName]=(summary[menuName]||0)+1;
+    (o.extra_ids||[]).forEach(id=>{
+      const n=extraMap.get(String(id))?.name;
+      if(n) summary[n]=(summary[n]||0)+1;
+    });
+  });
 
   c.innerHTML=`
     <div class="card hero">
@@ -105,9 +123,13 @@ function renderOrder(){
         <span class="total">Total: ${money(totalSelected())}</span>
         <button class="primary" id="confirm">Confirmar pedido</button>
       </div>
+    </div>
+    <div class="card">
+      <div class="row"><h2 style="margin:0">👥 Pedido en curso</h2><b>${people.length} persona${people.length===1?"":"s"}</b></div>
+      ${people.length?`<div class="list" style="margin-top:10px">${people.map(p=>`<div class="list-item row"><b>${p.name}</b><span>${p.detail}</span></div>`).join("")}</div>`:`<p class="muted">Todavía no ha pedido nadie.</p>`}
+      ${Object.keys(summary).length?`<h3>📊 Resumen</h3><div class="list">${Object.entries(summary).map(([name,count])=>`<div class="list-item row"><span>${name}</span><b>${count}x</b></div>`).join("")}</div>`:""}
     </div>`;
 
-  // Un único click por producto. Sin pointerup, touchend ni listeners globales.
   c.querySelectorAll("[data-product-id]").forEach(el=>{
     el.onclick=()=>{
       const id=String(el.dataset.productId);
@@ -208,6 +230,7 @@ async function adminSection(section){
               <b>${money(total)}</b>
               <div class="row" style="gap:8px">
                 <button class="primary" type="button" data-view-order="${g.key}">Entrar</button>
+                <button class="secondary" type="button" data-export-order="${g.key}">📤 Exportar pedido</button>
                 <button class="danger" type="button" data-delete-order="${g.key}">Eliminar</button>
               </div>
             </div>
@@ -234,6 +257,33 @@ async function adminSection(section){
           if(error){alert(error.message);return;}
         }
         await adminSection("orders");
+      };
+    });
+
+    c.querySelectorAll("[data-export-order]").forEach(btn=>{
+      btn.onclick=async()=>{
+        const key=btn.dataset.exportOrder;
+        const group=groups.find(g=>g.key===key);
+        if(!group)return;
+        const extraNames=new Map((extras||[]).map(x=>[String(x.id),x.name]));
+        const counts={};
+        const lines=(group.rows||[]).map(o=>{
+          const extrasList=(o.extra_ids||[]).map(id=>extraNames.get(String(id))).filter(Boolean);
+          const detail=[o.menu_items?.name||"—",...extrasList].join(" + ");
+          counts[o.menu_items?.name||"—"]=(counts[o.menu_items?.name||"—"]||0)+1;
+          extrasList.forEach(n=>counts[n]=(counts[n]||0)+1);
+          return `• ${o.profiles?.name||"—"}: ${detail}`;
+        });
+        const summaryLines=Object.entries(counts).map(([name,n])=>`• ${n}x ${name}`);
+        const text=`🥖 PEDIDO BAR — ${group.window?.name||"Pedido"}\n\n${lines.join("\n")}\n\n📊 RESUMEN\n${summaryLines.join("\n")}\n\n👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`;
+        try{
+          await navigator.clipboard.writeText(text);
+          const old=btn.textContent;
+          btn.textContent="✅ Copiado";
+          setTimeout(()=>btn.textContent=old,1500);
+        }catch(e){
+          window.prompt("Copia este pedido para WhatsApp:",text);
+        }
       };
     });
 
@@ -285,8 +335,8 @@ async function adminSection(section){
     };
   }
   if(section==="menu"){
-    const {data:items}=await db.from("menu_items").select("*").order("name");
-    const {data:ex}=await db.from("extras").select("*").order("name");
+    const {data:items}=await db.from("menu_items").select("*").eq("active",true).order("name");
+    const {data:ex}=await db.from("extras").select("*").eq("active",true).order("name");
     c.innerHTML=`<h2>Bocadillos</h2><div class="list">${(items||[]).map(x=>`<div class="list-item row"><span>${x.name} · ${money(x.price)}</span><button class="danger" data-del-menu="${x.id}">Eliminar</button></div>`).join("")}</div>
     <h2>Complementos</h2><div class="list">${(ex||[]).map(x=>`<div class="list-item row"><span>${x.name} · ${money(x.price)}</span><button class="danger" data-del-extra="${x.id}">Eliminar</button></div>`).join("")}</div>
     <hr><div class="grid"><div><h3>Nuevo bocadillo</h3><input id="mn" placeholder="Nombre"><input id="mp" type="number" step=".01" placeholder="Precio"><button class="primary" id="addM">Añadir</button></div><div><h3>Nuevo complemento</h3><input id="en" placeholder="Nombre"><input id="ep" type="number" step=".01" placeholder="Precio"><button class="primary" id="addE">Añadir</button></div></div>`;
