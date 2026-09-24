@@ -1,0 +1,9 @@
+{
+  "name":"Bocatas",
+  "short_name":"Bocatas",
+  "start_url":"/",
+  "display":"standalone",
+  "background_color":"#f7f7f5",
+  "theme_color":"#f97316",
+  "icons":[]
+}
