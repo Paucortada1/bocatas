@@ -60,8 +60,33 @@ function renderOrder(){
   <div class="card"><h2>🥖 Bocadillo</h2><div class="grid">${state.menu.map(x=>`<button type="button" class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu="${x.id}"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
   <div class="card"><h2>➕ Complementos</h2><div class="grid">${state.extras.map(x=>`<button type="button" class="product ${state.selectedExtras.includes(x.id)?"selected":""}" data-extra="${x.id}"><div class="product-name">${x.name}</div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
   <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm">Confirmar pedido</button></div></div>`;
-  c.querySelectorAll("[data-menu]").forEach(el=>el.onclick=()=>{state.selectedMenu=state.menu.find(x=>x.id===el.dataset.menu);renderOrder()});
-  c.querySelectorAll("[data-extra]").forEach(el=>el.onclick=()=>{const id=el.dataset.extra;state.selectedExtras=state.selectedExtras.includes(id)?state.selectedExtras.filter(x=>x!==id):[...state.selectedExtras,id];renderOrder()});
+  // Selección robusta en móvil/iPhone: usamos pointerup + click como respaldo.
+  const bindTap = (el, handler) => {
+    let handled = false;
+    el.addEventListener("pointerup", e => {
+      if (e.pointerType === "touch") {
+        e.preventDefault();
+        handled = true;
+        handler();
+        setTimeout(() => handled = false, 350);
+      }
+    }, {passive:false});
+    el.addEventListener("click", e => {
+      if (handled) return;
+      handler();
+    });
+  };
+  c.querySelectorAll("[data-menu]").forEach(el=>bindTap(el,()=>{
+    state.selectedMenu=state.menu.find(x=>String(x.id)===String(el.dataset.menu));
+    renderOrder();
+  }));
+  c.querySelectorAll("[data-extra]").forEach(el=>bindTap(el,()=>{
+    const id=el.dataset.extra;
+    state.selectedExtras=state.selectedExtras.includes(id)
+      ? state.selectedExtras.filter(x=>x!==id)
+      : [...state.selectedExtras,id];
+    renderOrder();
+  }));
   $("#confirm").onclick=confirmOrder;
 }
 function totalSelected(){return (state.selectedMenu?.price||0)+state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>x.id===id)?.price||0),0)}
