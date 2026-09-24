@@ -84,7 +84,8 @@ async function renderOrder(){
   const extraMap=new Map(state.extras.map(x=>[String(x.id),x]));
   const people=(currentOrders||[]).map(o=>({
     name:o.profiles?.name||"—",
-    detail:[o.menu_items?.name||"—",...(o.extra_ids||[]).map(id=>extraMap.get(String(id))?.name).filter(Boolean)].join(" + ")
+    detail:[o.menu_items?.name||"—",...(o.extra_ids||[]).map(id=>extraMap.get(String(id))?.name).filter(Boolean)].join(" + "),
+    total:Number(o.total||0)
   }));
   const summary={};
   (currentOrders||[]).forEach(o=>{
@@ -126,7 +127,7 @@ async function renderOrder(){
     </div>
     <div class="card">
       <div class="row"><h2 style="margin:0">👥 Pedido en curso</h2><b>${people.length} persona${people.length===1?"":"s"}</b></div>
-      ${people.length?`<div class="list" style="margin-top:10px">${people.map(p=>`<div class="list-item row"><b>${p.name}</b><span>${p.detail}</span></div>`).join("")}</div>`:`<p class="muted">Todavía no ha pedido nadie.</p>`}
+      ${people.length?`<div class="list" style="margin-top:10px">${people.map(p=>`<div class="list-item row"><div><b>${p.name}</b><br><span class="small muted">${p.detail}</span></div><b>${money(p.total)}</b></div>`).join("")}</div>`:`<p class="muted">Todavía no ha pedido nadie.</p>`}
       ${Object.keys(summary).length?`<h3>📊 Resumen</h3><div class="list">${Object.entries(summary).map(([name,count])=>`<div class="list-item row"><span>${name}</span><b>${count}x</b></div>`).join("")}</div>`:""}
     </div>`;
 
@@ -265,44 +266,17 @@ async function adminSection(section){
         const key=btn.dataset.exportOrder;
         const group=groups.find(g=>g.key===key);
         if(!group)return;
-
         const extraNames=new Map((extras||[]).map(x=>[String(x.id),x.name]));
         const counts={};
-        const personTotals={};
-
         const lines=(group.rows||[]).map(o=>{
-          const person=o.profiles?.name||"—";
           const extrasList=(o.extra_ids||[]).map(id=>extraNames.get(String(id))).filter(Boolean);
           const detail=[o.menu_items?.name||"—",...extrasList].join(" + ");
-          const total=Number(o.total||0);
-
           counts[o.menu_items?.name||"—"]=(counts[o.menu_items?.name||"—"]||0)+1;
           extrasList.forEach(n=>counts[n]=(counts[n]||0)+1);
-          personTotals[person]=(personTotals[person]||0)+total;
-
-          return `• ${person}: ${detail} → ${money(total)}`;
+          return `• ${o.profiles?.name||"—"}: ${detail}`;
         });
-
         const summaryLines=Object.entries(counts).map(([name,n])=>`• ${n}x ${name}`);
-        const personTotalLines=Object.entries(personTotals).map(([name,total])=>`• ${name}: ${money(total)}`);
-        const groupTotal=(group.rows||[]).reduce((s,o)=>s+Number(o.total||0),0);
-
-        const text=[
-          `🥖 LOBO CHICO X BIKEOCASION — ${group.window?.name||"Pedido"}`,
-          "",
-          ...lines,
-          "",
-          "💰 GASTO POR PERSONA",
-          ...personTotalLines,
-          "",
-          "📊 RESUMEN",
-          ...summaryLines,
-          "",
-          `💰 TOTAL: ${money(groupTotal)}`,
-          "",
-          `👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`
-        ].join("\n");
-
+        const text=`🥖 PEDIDO BAR — ${group.window?.name||"Pedido"}\n\n${lines.join("\n")}\n\n📊 RESUMEN\n${summaryLines.join("\n")}\n\n👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`;
         try{
           await navigator.clipboard.writeText(text);
           const old=btn.textContent;
