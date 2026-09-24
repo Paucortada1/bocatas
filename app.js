@@ -131,6 +131,21 @@ function renderOrder(){
   $("#confirm").onclick=confirmOrder;
 }
 
+async function confirmOrder(){
+  if(!state.selectedMenu)return alert("Elige un bocadillo.");
+  const {error}=await db.from("orders").insert({
+    user_id:state.session.user.id,
+    order_window_id:state.openOrder.id,
+    menu_item_id:state.selectedMenu.id,
+    extra_ids:state.selectedExtras,
+    total:totalSelected()
+  });
+  if(error)return alert(error.message);
+  state.selectedMenu=null;
+  state.selectedExtras=[];
+  alert("¡Pedido enviado!");
+  await load();
+}
 function totalSelected(){
   return (state.selectedMenu?.price||0)+state.selectedExtras.reduce(
     (s,id)=>s+(state.extras.find(x=>String(x.id)===String(id))?.price||0),0
