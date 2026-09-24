@@ -190,19 +190,83 @@ async function adminSection(section){
       if(!grouped.has(key)) grouped.set(key,[]);
       grouped.get(key).push(o);
     });
-    const groups=[...grouped.entries()].map(([key,rows])=>({window:windowMap.get(key)||null,rows}));
+    const groups=[...grouped.entries()].map(([key,rows])=>({key,window:windowMap.get(key)||null,rows}));
+
     c.innerHTML=`<h2>Pedidos</h2>
       ${groups.map(g=>{
         const w=g.window;
         const title=w?.name||"Pedido sin nombre";
         const total=g.rows.reduce((s,o)=>s+Number(o.total||0),0);
-        const rows=g.rows.map(o=>{
-          const extrasNames=(o.extra_ids||[]).map(id=>extraMap.get(String(id))?.name).filter(Boolean);
-          const detail=[o.menu_items?.name||"—",...extrasNames].join(" + ");
-          return `<div class="list-item row"><div><b>${o.profiles?.name||"—"}</b><br><span>${detail}</span><br><span class="small muted">${new Date(o.created_at).toLocaleString("es-ES")}</span></div><b>${money(o.total)}</b></div>`;
-        }).join("");
-        return `<div class="card" style="margin-top:12px"><div class="row"><div><h3 style="margin:0">${title}</h3><span class="small muted">${w?.closes_at?`Cierra: ${new Date(w.closes_at).toLocaleString("es-ES")}`:""}</span></div><b>${money(total)}</b></div><div class="list" style="margin-top:10px">${rows}</div></div>`;
+        const count=g.rows.length;
+        return `<div class="card" style="margin-top:12px">
+          <div class="row">
+            <div>
+              <h3 style="margin:0">${title}</h3>
+              <span class="small muted">${count} pedido${count===1?"":"s"}${w?.closes_at?` · Cierra: ${new Date(w.closes_at).toLocaleString("es-ES")}`:""}</span>
+            </div>
+            <div class="row" style="gap:10px">
+              <b>${money(total)}</b>
+              <div class="row" style="gap:8px">
+                <button class="primary" type="button" data-view-order="${g.key}">Entrar</button>
+                <button class="danger" type="button" data-delete-order="${g.key}">Eliminar</button>
+              </div>
+            </div>
+          </div>
+          <div id="order-detail-${g.key}" style="display:none;margin-top:12px"></div>
+        </div>`;
       }).join("")||"<p class='muted'>No hay pedidos.</p>"}`;
+
+    c.querySelectorAll("[data-delete-order]").forEach(btn=>{
+      btn.onclick=async()=>{
+        const key=btn.dataset.deleteOrder;
+        const group=groups.find(g=>g.key===key);
+        if(!group)return;
+        const name=group.window?.name||"este pedido";
+        if(!confirm(`¿Eliminar "${name}" y todos los pedidos que contiene?`))return;
+        btn.disabled=true;
+        const orderIds=group.rows.map(o=>o.id).filter(Boolean);
+        if(orderIds.length){
+          const {error}=await db.from("orders").delete().in("id",orderIds);
+          if(error){btn.disabled=false;alert(error.message);return;}
+        }
+        if(group.window?.id){
+          const {error}=await db.from("order_windows").delete().eq("id",group.window.id);
+          if(error){alert(error.message);return;}
+        }
+        await adminSection("orders");
+      };
+    });
+
+    c.querySelectorAll("[data-view-order]").forEach(btn=>{
+      btn.onclick=()=>{
+        const key=btn.dataset.viewOrder;
+        const group=groups.find(g=>g.key===key);
+        if(!group)return;
+        const detail=c.querySelector(`#order-detail-${CSS.escape(key)}`);
+        if(!detail)return;
+        if(detail.style.display!=="none"){
+          detail.style.display="none";
+          btn.textContent="Entrar";
+          return;
+        }
+        detail.innerHTML=`<div class="list">
+          ${group.rows.map(o=>{
+            const extrasNames=(o.extra_ids||[]).map(id=>extraMap.get(String(id))?.name).filter(Boolean);
+            const detailText=[o.menu_items?.name||"—",...extrasNames].join(" + ");
+            return `<div class="list-item row">
+              <div>
+                <b>${o.profiles?.name||"—"}</b><br>
+                <span>${detailText}</span><br>
+                <span class="small muted">${new Date(o.created_at).toLocaleString("es-ES")}</span>
+              </div>
+              <b>${money(o.total)}</b>
+            </div>`;
+          }).join("")}
+        </div>`;
+        detail.style.display="block";
+        btn.textContent="Cerrar";
+      };
+    });
   }
   if(section==="windows"){
     c.innerHTML=`<h2>Abrir pedido</h2>
