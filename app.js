@@ -57,27 +57,11 @@ function renderOrder(){
   const c=$("#content");
   if(!state.openOrder){c.innerHTML=`<div class="card hero"><h1>No hay pedido abierto</h1><p class="muted">Cuando se abra el próximo desayuno aparecerá aquí.</p></div>`;return}
   c.innerHTML=`<div class="card hero"><h1>Pedido abierto</h1><p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p></div>
-  <div class="card"><h2>🥖 Bocadillo</h2><div class="grid">${state.menu.map((x,i)=>`<button type="button" class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu-index="${i}"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
-  <div class="card"><h2>➕ Complementos</h2><div class="grid">${state.extras.map((x,i)=>`<button type="button" class="product ${state.selectedExtras.includes(x.id)?"selected":""}" data-extra-index="${i}"><div class="product-name">${x.name}</div><div class="price">${money(x.price)}</div></button>`).join("")}</div></div>
-  <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button type="button" class="primary" id="confirm">Confirmar pedido</button></div></div>`;
-
-  c.querySelectorAll("[data-menu-index]").forEach(el=>{
-    el.addEventListener("click",()=>{
-      const item=state.menu[Number(el.dataset.menuIndex)];
-      if(!item)return;
-      state.selectedMenu=item;
-      renderOrder();
-    });
-  });
-  c.querySelectorAll("[data-extra-index]").forEach(el=>{
-    el.addEventListener("click",()=>{
-      const item=state.extras[Number(el.dataset.extraIndex)];
-      if(!item)return;
-      const id=item.id;
-      state.selectedExtras=state.selectedExtras.includes(id)?state.selectedExtras.filter(x=>x!==id):[...state.selectedExtras,id];
-      renderOrder();
-    });
-  });
+  <div class="card"><h2>🥖 Bocadillo</h2><div class="grid">${state.menu.map(x=>`<div class="product ${state.selectedMenu?.id===x.id?"selected":""}" data-menu="${x.id}"><div><div class="product-name">${x.name}</div><div class="small muted">${x.category||""}</div></div><div class="price">${money(x.price)}</div></div>`).join("")}</div></div>
+  <div class="card"><h2>➕ Complementos</h2><div class="grid">${state.extras.map(x=>`<div class="product ${state.selectedExtras.includes(x.id)?"selected":""}" data-extra="${x.id}"><div class="product-name">${x.name}</div><div class="price">${money(x.price)}</div></div>`).join("")}</div></div>
+  <div class="card"><div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm">Confirmar pedido</button></div></div>`;
+  c.querySelectorAll("[data-menu]").forEach(el=>el.onclick=()=>{state.selectedMenu = state.selectedMenu?.id===el.dataset.menu ? null : state.menu.find(x=>x.id===el.dataset.menu);renderOrder()});
+  c.querySelectorAll("[data-extra]").forEach(el=>el.onclick=()=>{const id=el.dataset.extra;state.selectedExtras=state.selectedExtras.includes(id)?state.selectedExtras.filter(x=>x!==id):[...state.selectedExtras,id];renderOrder()});
   $("#confirm").onclick=confirmOrder;
 }
 function totalSelected(){return (state.selectedMenu?.price||0)+state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>x.id===id)?.price||0),0)}
