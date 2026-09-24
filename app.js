@@ -10,12 +10,26 @@ async function init(){
   if(SUPABASE_URL.startsWith("PEGA_")) return renderSetup();
   const {data:{session}} = await db.auth.getSession();
   state.session=session;
-  db.auth.onAuthStateChange((_e,s)=>{state.session=s; if(!s) renderAuth(); else load();});
+  db.auth.onAuthStateChange((_e,s)=>{
+    const previousUserId=state.session?.user?.id || null;
+    const nextUserId=s?.user?.id || null;
+    state.session=s;
+    if(previousUserId!==nextUserId){
+      state.selectedMenu=null;
+      state.selectedExtras=[];
+    }
+    if(!s) renderAuth(); else load();
+  });
   if(!session) return renderAuth();
   await load();
   if("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(()=>{});
 }
 async function load(){
+  if(!state.session){
+    state.selectedMenu=null;
+    state.selectedExtras=[];
+    return renderAuth();
+  }
   const {data:profile} = await db.from("profiles").select("*").eq("id",state.session.user.id).single();
   state.profile=profile;
   const [{data:menu},{data:extras},{data:open}] = await Promise.all([
@@ -45,7 +59,11 @@ function render(){
     <nav class="nav">${nav("order","🥪 Pedir")}${nav("menu","📋 Carta")}${nav("stats","📊 Estadísticas")}${admin?nav("admin","⚙️ Admin"):""}</nav>
     <main id="content"></main>
   </div>`;
-  $("#logout").onclick=()=>db.auth.signOut();
+  $("#logout").onclick=async()=>{
+    state.selectedMenu=null;
+    state.selectedExtras=[];
+    await db.auth.signOut();
+  };
   if(state.page==="order") renderOrder();
   if(state.page==="menu") renderMenu();
   if(state.page==="stats") renderStats();
