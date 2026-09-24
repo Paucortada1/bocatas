@@ -61,69 +61,57 @@ function renderOrder(){
   }
 
   const products = [
-    ...state.menu.map(x=>({...x, productType:"menu"})),
-    ...state.extras.map(x=>({...x, productType:"extra"}))
+    ...state.menu.map(x=>({id:String(x.id),name:x.name,price:x.price,type:"menu",category:x.category||""})),
+    ...state.extras.map(x=>({id:String(x.id),name:x.name,price:x.price,type:"extra",category:"Complemento"}))
   ];
 
-  const selectedIds = [
-    ...(state.selectedMenu ? [String(state.selectedMenu.id)] : []),
-    ...state.selectedExtras.map(String)
-  ];
+  const selectedMenuId = state.selectedMenu ? String(state.selectedMenu.id) : "";
+  const selectedExtraIds = new Set(state.selectedExtras.map(String));
 
-  c.innerHTML=`<div class="card hero">
-    <h1>Pedido abierto</h1>
-    <p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p>
-  </div>
-  <div class="card">
-    <div class="row">
-      <h2 style="margin:0">🥪 Tu pedido</h2>
-      <button type="button" class="secondary" id="clearOrder">Limpiar</button>
+  c.innerHTML=`
+    <div class="card hero">
+      <h1>Pedido abierto</h1>
+      <p class="muted">Cierra: ${new Date(state.openOrder.closes_at).toLocaleString("es-ES",{dateStyle:"short",timeStyle:"short"})}</p>
     </div>
-    <p class="small muted">Selecciona un bocadillo y los complementos que quieras.</p>
-    <div class="grid">${products.map(x=>`
-      <button type="button" class="product ${selectedIds.includes(String(x.id))?"selected":""}" data-product="${x.id}" data-type="${x.productType}">
-        <div>
-          <div class="product-name">${x.name}</div>
-          <div class="small muted">${x.productType==="menu"?(x.category||"Bocadillo"):"Complemento"}</div>
-        </div>
-        <div class="price">${money(x.price)}</div>
-      </button>`).join("")}</div>
-  </div>
-  <div class="card">
-    <div class="row"><span class="total">Total: ${money(totalSelected())}</span><button class="primary" id="confirm">Confirmar pedido</button></div>
-  </div>`;
+    <div class="card">
+      <div class="row">
+        <h2 style="margin:0">🥪 Tu pedido</h2>
+        <button type="button" class="secondary" id="clearOrder">Limpiar</button>
+      </div>
+      <p class="small muted">Elige 1 bocadillo y los complementos que quieras.</p>
+      <div class="grid">
+        ${products.map(p=>{
+          const selected = p.type==="menu"
+            ? selectedMenuId===p.id
+            : selectedExtraIds.has(p.id);
+          return `<button type="button" class="product ${selected?"selected":""}" data-product-id="${p.id}" data-product-type="${p.type}">
+            <div><div class="product-name">${p.name}</div><div class="small muted">${p.category}</div></div>
+            <div class="price">${money(p.price)}</div>
+          </button>`;
+        }).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <span class="total">Total: ${money(totalSelected())}</span>
+        <button class="primary" id="confirm">Confirmar pedido</button>
+      </div>
+    </div>`;
 
-  let lastTap = 0;
-  const selectProduct = el=>{
-    const now=Date.now();
-    if(now-lastTap<250) return;
-    lastTap=now;
-
-    const id=String(el.dataset.product);
-    const type=el.dataset.type;
-
-    if(type==="menu"){
-      // Solo un bocadillo: seleccionar otro sustituye el anterior.
-      state.selectedMenu=state.menu.find(x=>String(x.id)===id)||null;
-    }else{
-      // Complementos: multiselección.
-      const current=state.selectedExtras.map(String);
-      state.selectedExtras=current.includes(id)
-        ? state.selectedExtras.filter(x=>String(x)!==id)
-        : [...state.selectedExtras, el.dataset.product];
-    }
-    renderOrder();
-  };
-
-  c.querySelectorAll("[data-product]").forEach(el=>{
-    el.addEventListener("pointerup",e=>{
-      if(e.pointerType==="touch") e.preventDefault();
-      selectProduct(el);
-    },{passive:false});
-    el.addEventListener("click",()=>{
-      if(Date.now()-lastTap<500) return;
-      selectProduct(el);
-    });
+  // Un único click por producto. Sin pointerup, touchend ni listeners globales.
+  c.querySelectorAll("[data-product-id]").forEach(el=>{
+    el.onclick=()=>{
+      const id=String(el.dataset.productId);
+      if(el.dataset.productType==="menu"){
+        state.selectedMenu=state.menu.find(x=>String(x.id)===id)||null;
+      }else{
+        const current=state.selectedExtras.map(String);
+        state.selectedExtras=current.includes(id)
+          ? state.selectedExtras.filter(x=>String(x)!==id)
+          : [...state.selectedExtras,el.dataset.productId];
+      }
+      renderOrder();
+    };
   });
 
   $("#clearOrder").onclick=()=>{
@@ -135,8 +123,9 @@ function renderOrder(){
 }
 
 function totalSelected(){
-  return (state.selectedMenu?.price||0)
-    + state.selectedExtras.reduce((s,id)=>s+(state.extras.find(x=>String(x.id)===String(id))?.price||0),0);
+  return (state.selectedMenu?.price||0)+state.selectedExtras.reduce(
+    (s,id)=>s+(state.extras.find(x=>String(x.id)===String(id))?.price||0),0
+  );
 }
 function renderMenu(){
   $("#content").innerHTML=`<div class="card"><h1>📋 Carta</h1><h2>Bocadillos</h2><div class="list">${state.menu.map(x=>`<div class="list-item row"><span>${x.name}</span><b>${money(x.price)}</b></div>`).join("")}</div><h2>Complementos</h2><div class="list">${state.extras.map(x=>`<div class="list-item row"><span>${x.name}</span><b>${money(x.price)}</b></div>`).join("")}</div></div>`;
@@ -160,73 +149,8 @@ function renderAdmin(){
 async function adminSection(section){
   const c=$("#adminContent");
   if(section==="orders"){
-    const {data:windows}=await db.from("order_windows").select("*").order("created_at",{ascending:false}).limit(1);
-    const latestWindow=windows?.[0];
-    const {data}=latestWindow
-      ? await db.from("orders").select("*,profiles(name),menu_items(name)").eq("order_window_id",latestWindow.id).order("created_at",{ascending:true})
-      : {data:[]};
-
-    const orders=data||[];
-    const sandwichCounts={};
-    const extraCounts={};
-
-    orders.forEach(o=>{
-      const sandwich=o.menu_items?.name||"—";
-      sandwichCounts[sandwich]=(sandwichCounts[sandwich]||0)+1;
-      (o.extra_ids||[]).forEach(id=>{
-        const extra=state.extras.find(x=>String(x.id)===String(id));
-        if(extra) extraCounts[extra.name]=(extraCounts[extra.name]||0)+1;
-      });
-    });
-
-    const summaryText=[
-      "PEDIDO DEL BAR",
-      "",
-      "BOCADILLOS:",
-      ...Object.entries(sandwichCounts).map(([name,n])=>`${n}x ${name}`),
-      ...(Object.keys(extraCounts).length?["","COMPLEMENTOS:",...Object.entries(extraCounts).map(([name,n])=>`${n}x ${name}`)]:[]),
-      "",
-      `TOTAL: ${orders.length} pedido${orders.length===1?"":"s"}`
-    ].join("\n");
-
-    c.innerHTML=`
-      <h2>Pedidos</h2>
-      <div class="card" style="margin:12px 0">
-        <div class="row">
-          <div>
-            <h2 style="margin:0">📋 Resumen para el bar</h2>
-            <p class="muted small">Resumen agrupado del último pedido.</p>
-          </div>
-          <button class="primary" id="copyBar">Copiar</button>
-        </div>
-        <pre id="barSummary" style="white-space:pre-wrap;margin:12px 0 0">${summaryText}</pre>
-      </div>
-      <h3>Pedidos individuales</h3>
-      <div class="list">
-        ${orders.map(o=>`
-          <div class="list-item row">
-            <div>
-              <b>${o.profiles?.name||"—"}</b><br>
-              ${o.menu_items?.name||"—"}
-              ${(o.extra_ids||[]).map(id=>{
-                const extra=state.extras.find(x=>String(x.id)===String(id));
-                return extra?`<br><span class="small muted">+ ${extra.name}</span>`:"";
-              }).join("")}
-            </div>
-            <b>${money(o.total)}</b>
-          </div>
-        `).join("")||"<p class='muted'>No hay pedidos.</p>"}
-      </div>`;
-
-    $("#copyBar").onclick=async()=>{
-      try{
-        await navigator.clipboard.writeText(summaryText);
-        $("#copyBar").textContent="Copiado ✓";
-        setTimeout(()=>$("#copyBar").textContent="Copiar",1500);
-      }catch(e){
-        alert("No se ha podido copiar. Selecciona el resumen y cópialo manualmente.");
-      }
-    };
+    const {data}=await db.from("orders").select("*,profiles(name),menu_items(name)").order("created_at",{ascending:false});
+    c.innerHTML=`<h2>Pedidos</h2><div class="list">${(data||[]).map(o=>`<div class="list-item row"><div><b>${o.profiles?.name||"—"}</b><br>${o.menu_items?.name||"—"}<br><span class="small muted">${new Date(o.created_at).toLocaleString("es-ES")}</span></div><b>${money(o.total)}</b></div>`).join("")||"<p class='muted'>No hay pedidos.</p>"}</div>`;
   }
   if(section==="windows"){
     c.innerHTML=`<h2>Abrir pedido</h2><div class="field"><label>Hora de cierre</label><input id="closeTime" type="datetime-local"></div><button class="primary" id="openBtn">Abrir pedido</button>`;
