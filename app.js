@@ -273,10 +273,11 @@ async function adminSection(section){
           const detail=[o.menu_items?.name||"—",...extrasList].join(" + ");
           counts[o.menu_items?.name||"—"]=(counts[o.menu_items?.name||"—"]||0)+1;
           extrasList.forEach(n=>counts[n]=(counts[n]||0)+1);
-          return `• ${o.profiles?.name||"—"}: ${detail}`;
+          return `• ${o.profiles?.name||"—"}: ${detail} → ${money(o.total)}`;
         });
         const summaryLines=Object.entries(counts).map(([name,n])=>`• ${n}x ${name}`);
-        const text=`🥖 PEDIDO BAR — ${group.window?.name||"Pedido"}\n\n${lines.join("\n")}\n\n📊 RESUMEN\n${summaryLines.join("\n")}\n\n👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`;
+        const grandTotal=(group.rows||[]).reduce((sum,o)=>sum+Number(o.total||0),0);
+        const text=`🥖 LOBO CHICO X BIKEOCASION — ${group.window?.name||"Pedido"}\n\n${lines.join("\n")}\n\n📊 RESUMEN\n${summaryLines.join("\n")}\n\n💰 TOTAL: ${money(grandTotal)}\n\n👥 ${group.rows.length} persona${group.rows.length===1?"":"s"}`;
         try{
           await navigator.clipboard.writeText(text);
           const old=btn.textContent;
